@@ -1,0 +1,301 @@
+<?php
+// ============================================================
+//  deploy-handler.php  —  Integração com MCP Salesforce Server
+//  Trigger: /deploy, /describe, /status, /scratch
+// ============================================================
+
+define('MCP_SERVER', 'https://mcp-sf-provisioning-462dd29c2455.herokuapp.com');
+
+/**
+ * Detecta se a mensagem é um trigger de deploy/salesforce
+ */
+function isDeployTrigger(string $mensagem): bool {
+    $mensagem = mb_strtolower(trim($mensagem));
+    $triggers = ['/deploy', '/describe', '/status', '/scratch', '/mock'];
+    foreach ($triggers as $t) {
+        if (str_starts_with($mensagem, $t)) return true;
+    }
+    $frases = [
+        'deployar na org', 'provisionar metadados', 'deploy manifest',
+        'criar na org', 'deploy workstream', 'provisionar spec',
+    ];
+    foreach ($frases as $f) {
+        if (str_contains($mensagem, $f)) return true;
+    }
+    return false;
+}
+
+/**
+ * Processa comandos de deploy/salesforce
+ * Retorna array com resposta formatada ou null se não processou
+ */
+function processarDeploy(string $mensagem, array $historico): ?array {
+    $msg = trim($mensagem);
+    $msgLower = mb_strtolower($msg);
+
+    // ── /status ──
+    if (str_starts_with($msgLower, '/status')) {
+        return chamarMCP('/test-connection', 'GET');
+    }
+
+    // ── /describe {objeto} ──
+    if (str_starts_with($msgLower, '/describe')) {
+        $objeto = trim(preg_replace('/^\/describe\s*/i', '', $msg));
+        if (empty($objeto)) {
+            return respostaDeploy(
+                "Para consultar um objeto, informe o nome.\n\n" .
+                "Exemplos:\n" .
+                "- `/describe Account`\n" .
+                "- `/describe Lead`\n" .
+                "- `/describe Opportunity`\n" .
+                "- `/describe Custom_Object__c`",
+                'info'
+            );
+        }
+        return chamarMCP("/api/describe/" . urlencode($objeto), 'GET');
+    }
+
+    // ── /scratch ──
+    if (str_starts_with($msgLower, '/scratch')) {
+        $args = trim(preg_replace('/^\/scratch\s*/i', '', $msg));
+        $argsLower = mb_strtolower($args);
+
+        if (empty($args) || $argsLower === 'list') {
+            return chamarMCP('/api/scratch-orgs', 'GET');
+        }
+        if (str_starts_with($argsLower, 'create ')) {
+            $template = trim(substr($args, 7));
+            return chamarMCP('/api/scratch-orgs/create/' . urlencode($template), 'GET');
+        }
+        if (str_starts_with($argsLower, 'delete ')) {
+            $orgId = trim(substr($args, 7));
+            return chamarMCP('/api/scratch-orgs/delete/' . urlencode($orgId), 'GET');
+        }
+        if (str_starts_with($argsLower, 'login ')) {
+            $id = trim(substr($args, 6));
+            return chamarMCP('/api/scratch-orgs/login/' . urlencode($id), 'GET');
+        }
+
+        return respostaDeploy(
+            "Comandos `/scratch` disponíveis:\n\n" .
+            "- `/scratch list` — Listar orgs ativas\n" .
+            "- `/scratch create {template}` — Criar scratch org\n" .
+            "- `/scratch delete {orgId}` — Deletar scratch org\n" .
+            "- `/scratch login {id}` — Obter link de login",
+            'info'
+        );
+    }
+
+    // ── /mock ──
+    if (str_starts_with($msgLower, '/mock')) {
+        $args = trim(preg_replace('/^\/mock\s*/i', '', $msg));
+        if (empty($args)) {
+            return respostaDeploy(
+                "Para inserir dados de teste, informe o cenário.\n\n" .
+                "Exemplos:\n" .
+                "- `/mock leads-b2b` — Leads B2B com dados Neoway\n" .
+                "- `/mock accounts` — Accounts com hierarquia\n" .
+                "- `/mock full-cycle` — Ciclo completo Lead→Opp→Quote→Order",
+                'info'
+            );
+        }
+        return chamarMCP('/api/mock-data-b64/' . base64url_encode(json_encode(['scenario' => $args])), 'GET');
+    }
+
+    // ── /deploy ──
+    if (str_starts_with($msgLower, '/deploy')) {
+        $conteudo = trim(preg_replace('/^\/deploy\s*/i', '', $msg));
+
+        if (empty($conteudo)) {
+            // Verifica se tem spec/HF recente no histórico
+            $ultimaResposta = '';
+            foreach (array_reverse($historico) as $h) {
+                if ($h['role'] === 'assistant') {
+                    $ultimaResposta = $h['content'];
+                    break;
+                }
+            }
+
+            if (!empty($ultimaResposta) && (
+                str_contains($ultimaResposta, '## 04. Data Model') ||
+                str_contains($ultimaResposta, 'API Name') ||
+                str_contains($ultimaResposta, '__c')
+            )) {
+                return respostaDeploy(
+                    "Detectei uma spec/HF recente na conversa. Para deployar, preciso que o conteúdo seja processado por uma IA com capacidade de gerar manifests JSON.\n\n" .
+                    "**Opções:**\n" .
+                    "1. Cole o manifest JSON diretamente: `/deploy {\"specName\":\"...\", \"metadata\":{...}}`\n" .
+                    "2. Use o Claude (claude.ai) para gerar o manifest a partir da spec e cole aqui\n\n" .
+                    "**Formato do manifest:**\n```json\n{\n  \"specName\": \"Nome_Descritivo\",\n  \"metadata\": {\n    \"customObjects\": [],\n    \"customFields\": [],\n    \"validationRules\": [],\n    \"recordTypes\": []\n  }\n}\n```",
+                    'info'
+                );
+            }
+
+            return respostaDeploy(
+                "Para deployar metadados na org Salesforce, informe:\n\n" .
+                "- `/deploy {manifest JSON}` — Deploy direto\n" .
+                "- `/deploy` após gerar uma `/spec` — Usa a spec da conversa\n\n" .
+                "Ou use os outros comandos:\n" .
+                "- `/status` — Verificar conexão com a org\n" .
+                "- `/describe Account` — Consultar objeto\n" .
+                "- `/scratch list` — Gerenciar scratch orgs",
+                'info'
+            );
+        }
+
+        // Tenta parsear como JSON
+        $jsonData = json_decode($conteudo, true);
+        if ($jsonData && isset($jsonData['metadata'])) {
+            // É um manifest válido — faz deploy
+            $b64 = base64url_encode($conteudo);
+            return chamarMCP('/api/deploy-b64/' . $b64, 'GET');
+        }
+
+        // Não é JSON — instruir o usuário
+        return respostaDeploy(
+            "O conteúdo não é um manifest JSON válido.\n\n" .
+            "Para deployar, o formato deve ser:\n```json\n{\n  \"specName\": \"Nome\",\n  \"metadata\": {\n    \"customFields\": [\n      {\n        \"object\": \"Lead\",\n        \"fullName\": \"Lead.Campo__c\",\n        \"label\": \"Campo\",\n        \"type\": \"Text\",\n        \"length\": 100\n      }\n    ]\n  }\n}\n```\n\n" .
+            "Gere o manifest no Claude (claude.ai) com o comando `/deploy` + a spec, e cole aqui o JSON resultante.",
+            'info'
+        );
+    }
+
+    return null;
+}
+
+/**
+ * Chama o MCP Server no Heroku
+ */
+function chamarMCP(string $endpoint, string $method = 'GET', $body = null): array {
+    $url = MCP_SERVER . $endpoint;
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 120,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+    ]);
+
+    if ($method === 'POST' && $body) {
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, is_string($body) ? $body : json_encode($body));
+    }
+
+    $resp     = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr  = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlErr) {
+        return respostaDeploy("❌ Erro de conexão com o servidor MCP:\n`$curlErr`\n\nVerifique se o servidor está ativo: " . MCP_SERVER . "/test-connection", 'error');
+    }
+
+    $dados = json_decode($resp, true);
+
+    if ($httpCode >= 200 && $httpCode < 300) {
+        $formatado = formatarRespostaMCP($dados, $httpCode);
+        return respostaDeploy($formatado, 'deploy');
+    } else {
+        $erro = $dados['message'] ?? $dados['error'] ?? $resp;
+        return respostaDeploy("❌ Erro do servidor (HTTP $httpCode):\n`$erro`", 'error');
+    }
+}
+
+/**
+ * Formata a resposta do MCP Server para exibição
+ */
+function formatarRespostaMCP($dados, int $httpCode): string {
+    if (!is_array($dados)) return "```json\n" . json_encode($dados, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n```";
+
+    // Status/Connection
+    if (isset($dados['status']) && $dados['status'] === 'connected') {
+        return "✅ **Conexão ativa**\n\n" .
+            "| Campo | Valor |\n|---|---|\n" .
+            "| Org ID | `{$dados['orgId']}` |\n" .
+            "| Username | `{$dados['username']}` |\n" .
+            "| Display Name | {$dados['displayName']} |";
+    }
+
+    // Deploy result
+    if (isset($dados['success'])) {
+        if ($dados['success']) {
+            $componentes = $dados['components'] ?? $dados['details'] ?? [];
+            $total = is_array($componentes) ? count($componentes) : ($dados['componentCount'] ?? '?');
+            $msg = "✅ **Deploy realizado com sucesso!**\n\n" .
+                "- Componentes: **$total**\n" .
+                "- Spec: `" . ($dados['specName'] ?? 'N/A') . "`\n";
+            if (is_array($componentes) && count($componentes) > 0) {
+                $msg .= "\n| # | Componente | Tipo | Status |\n|---|---|---|---|\n";
+                foreach (array_slice($componentes, 0, 30) as $i => $c) {
+                    $nome = is_array($c) ? ($c['fullName'] ?? $c['name'] ?? '?') : $c;
+                    $tipo = is_array($c) ? ($c['type'] ?? '-') : '-';
+                    $msg .= "| " . ($i+1) . " | `$nome` | $tipo | ✅ |\n";
+                }
+            }
+            return $msg;
+        } else {
+            $erros = $dados['errors'] ?? $dados['componentFailures'] ?? [];
+            $msg = "❌ **Deploy falhou**\n\n";
+            if (is_array($erros)) {
+                foreach ($erros as $e) {
+                    $msg .= "- " . (is_array($e) ? ($e['problem'] ?? json_encode($e)) : $e) . "\n";
+                }
+            }
+            return $msg;
+        }
+    }
+
+    // Describe result
+    if (isset($dados['fields']) || isset($dados['name'])) {
+        $nome = $dados['name'] ?? '?';
+        $label = $dados['label'] ?? '';
+        $msg = "📋 **Describe: $nome** ($label)\n\n";
+        if (isset($dados['fields']) && is_array($dados['fields'])) {
+            $msg .= "| Campo | API Name | Tipo | Obrigatório |\n|---|---|---|---|\n";
+            foreach (array_slice($dados['fields'], 0, 50) as $f) {
+                $req = !empty($f['nillable']) ? '' : '✓';
+                $msg .= "| {$f['label']} | `{$f['name']}` | {$f['type']} | $req |\n";
+            }
+            $total = count($dados['fields']);
+            if ($total > 50) $msg .= "\n*...e mais " . ($total - 50) . " campos*";
+        }
+        return $msg;
+    }
+
+    // Scratch orgs list
+    if (isset($dados['scratchOrgs']) || (is_array($dados) && isset($dados[0]['ScratchOrg']))) {
+        $orgs = $dados['scratchOrgs'] ?? $dados;
+        if (empty($orgs)) return "📋 **Scratch Orgs:** nenhuma ativa no momento.";
+        $msg = "📋 **Scratch Orgs ativas**\n\n| # | ID | Status | Expira |\n|---|---|---|---|\n";
+        foreach ($orgs as $i => $o) {
+            $id = $o['ScratchOrg'] ?? $o['id'] ?? '?';
+            $status = $o['Status'] ?? $o['status'] ?? '?';
+            $expira = $o['ExpirationDate'] ?? $o['expirationDate'] ?? '?';
+            $msg .= "| " . ($i+1) . " | `$id` | $status | $expira |\n";
+        }
+        return $msg;
+    }
+
+    // Fallback: JSON formatado
+    return "```json\n" . json_encode($dados, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n```";
+}
+
+/**
+ * Monta a resposta no formato esperado pelo proxy.php
+ */
+function respostaDeploy(string $conteudo, string $tipo = 'deploy'): array {
+    return [
+        'choices' => [['message' => ['content' => $conteudo]]],
+        'modelo_usado' => 'mcp-server',
+        'modelo_label' => 'Salesforce MCP',
+        'tipo'         => $tipo,
+    ];
+}
+
+/**
+ * Base64 URL-safe encode
+ */
+function base64url_encode(string $data): string {
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
