@@ -177,6 +177,19 @@ textarea::placeholder{color:var(--text3);}
 }
 .spec-download-btn:hover{background:#15803d;}
 
+
+/* Banner DEPLOY — laranja */
+.deploy-banner{
+  display:flex;align-items:center;gap:10px;
+  background:#1a1508;border:1px solid #92400e;border-radius:9px;
+  padding:10px 14px;margin-bottom:12px;animation:up .3s ease both;
+}
+.deploy-badge{
+  background:#f59e0b;color:#0f0f0f;font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:4px;letter-spacing:1px;
+}
+.deploy-banner span{font-size:13px;color:#fcd34d;flex:1;}
+
 /* ═══ MOBILE ═══ */
 @media (max-width: 600px) {
   header {
@@ -331,6 +344,7 @@ function appendMsg(role, html, modelLabel, tipo){
   const isHF   = tipo === 'hf';
   const isAta  = tipo === 'ata';
   const isSpec = tipo === 'spec';
+  const isDeploy = tipo === 'deploy';
   const modelTag = (isAI && modelLabel) ? `<span style="font-size:10px;color:var(--text3);margin-left:6px;font-weight:300;">via ${modelLabel}</span>` : '';
 
   let docBanner = '';
@@ -351,6 +365,11 @@ function appendMsg(role, html, modelLabel, tipo){
       <span class="spec-badge">SPEC</span>
       <span>Especificação Técnica gerada</span>
       <button class="spec-download-btn" onclick="doWordTipo(this,'spec')">⬇ Download .docx</button>
+    </div>`;
+  } else if (tipo === 'deploy') {
+    docBanner = `<div class="deploy-banner">
+      <span class="deploy-badge">SF</span>
+      <span>Salesforce MCP Server</span>
     </div>`;
   }
 
