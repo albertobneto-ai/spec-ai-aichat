@@ -267,16 +267,31 @@ function formatarRespostaMCP($dados, int $httpCode): string {
     if (isset($dados['fields']) || isset($dados['name'])) {
         $nome = $dados['name'] ?? '?';
         $label = $dados['label'] ?? '';
-        $msg = "📋 **Describe: $nome** ($label)\n\n";
-        if (isset($dados['fields']) && is_array($dados['fields'])) {
-            $msg .= "| Campo | API Name | Tipo | Obrigatório |\n|---|---|---|---|\n";
-            foreach (array_slice($dados['fields'], 0, 50) as $f) {
-                $req = !empty($f['nillable']) ? '' : '✓';
-                $msg .= "| {$f['label']} | `{$f['name']}` | {$f['type']} | $req |\n";
+        $fields = $dados['fields'] ?? [];
+        $totalFields = count($fields);
+        $customCount = count(array_filter($fields, fn($f) => !empty($f['custom'])));
+        $standardCount = $totalFields - $customCount;
+
+        $msg = "📋 **$nome** ($label) — $totalFields campos ($standardCount standard, $customCount custom)\n\n";
+
+        if (!empty($fields)) {
+            $msg .= "| # | Label (Org) | API Name | Tipo | Custom | Obrigatório |\n|---|---|---|---|---|---|\n";
+            foreach ($fields as $i => $f) {
+                $req = empty($f['nillable']) ? '✓' : '';
+                $custom = !empty($f['custom']) ? '✦' : '';
+                $msg .= "| " . ($i+1) . " | {$f['label']} | `{$f['name']}` | {$f['type']} | $custom | $req |\n";
             }
-            $total = count($dados['fields']);
-            if ($total > 50) $msg .= "\n*...e mais " . ($total - 50) . " campos*";
         }
+
+        // Record Types
+        if (!empty($dados['recordTypes'])) {
+            $msg .= "\n**Record Types:**\n";
+            foreach ($dados['recordTypes'] as $rt) {
+                $status = !empty($rt['active']) ? '✅' : '⭕';
+                $msg .= "- $status {$rt['name']}\n";
+            }
+        }
+
         return $msg;
     }
 
