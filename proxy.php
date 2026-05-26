@@ -164,6 +164,7 @@ $modoAta     = !$modoDeploy && !$modoHF && !$modoSpec && isAtaTrigger($ultimaMen
 $necessidade  = $modoHF ? extrairNecessidade($ultimaMensagem) : '';
 $conteudoSpec = $modoSpec ? extrairConteudoSpec($ultimaMensagem) : '';
 $conteudoAta  = $modoAta ? extrairConteudoAta($ultimaMensagem) : '';
+$apenasGrok   = false; // Flag: se true, pula modelos free (OpenRouter)
 
 // ── MONTA O SYSTEM PROMPT ──────────────────────────────────────────────
 
@@ -280,12 +281,13 @@ if ($modoAta) {
 
     // User message é curta e direta — SEM o conteúdo da HF
     $msgFormatada = "Gere agora a ESPECIFICAÇÃO TÉCNICA completa (18 seções) com base no requisito funcional que está no system prompt. Comece com '# ESPECIFICAÇÃO TÉCNICA'. Inclua Data Model com API Names, Validation Rules com fórmulas, e Runbook de Implementação na seção 18.";
-    foreach ($messages as &$m) {
-        if ($m === end($messages) && $m['role'] === 'user') {
-            $m['content'] = $msgFormatada;
-        }
-    }
-    unset($m);
+
+    // IMPORTANTE: Para /spec, LIMPA o histórico da conversa
+    // Se não limpar, o modelo vê HFs anteriores e copia o formato
+    $messages = [['role' => 'user', 'content' => $msgFormatada]];
+
+    // Flag para usar APENAS Grok (modelos free não seguem system prompts complexos)
+    $apenasGrok = true;
 
 } else {
     // Modo normal — com data e anti-alucinação
@@ -322,7 +324,8 @@ $multiCurl = curl_multi_init();
 $handles   = [];
 $idx       = 0;
 
-// Handles para OpenRouter
+// Handles para OpenRouter (pula se apenasGrok — modelos free não seguem prompts complexos)
+if (!$apenasGrok) {
 foreach (array_keys(MODELOS_OPENROUTER) as $modelo) {
     $payload = json_encode([
         'model'       => $modelo,
@@ -349,6 +352,7 @@ foreach (array_keys(MODELOS_OPENROUTER) as $modelo) {
     $handles[$idx] = ['curl' => $ch, 'modelo' => $modelo, 'label' => MODELOS_OPENROUTER[$modelo]];
     $idx++;
 }
+} // fim if (!$apenasGrok)
 
 // Handles para xAI / Grok (se a chave estiver configurada)
 if (defined('GROK_KEY') && GROK_KEY && !str_contains(GROK_KEY, 'COLOQUE')) {
