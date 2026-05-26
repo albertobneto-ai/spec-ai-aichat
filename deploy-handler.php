@@ -4,6 +4,8 @@
 //  Trigger: /deploy, /describe, /status, /scratch
 // ============================================================
 
+require_once __DIR__ . '/alias-map.php';
+
 define('MCP_SERVER', 'https://mcp-sf-provisioning-462dd29c2455.herokuapp.com');
 
 /**
@@ -43,16 +45,31 @@ function processarDeploy(string $mensagem, array $historico): ?array {
         $objeto = trim(preg_replace('/^\/describe\s*/i', '', $msg));
         if (empty($objeto)) {
             return respostaDeploy(
-                "Para consultar um objeto, informe o nome.\n\n" .
+                "Para consultar um objeto, informe o nome (aceita PT-BR).\n\n" .
                 "Exemplos:\n" .
-                "- `/describe Account`\n" .
-                "- `/describe Lead`\n" .
-                "- `/describe Opportunity`\n" .
+                "- `/describe conta` ou `/describe Account`\n" .
+                "- `/describe oportunidade` ou `/describe Opportunity`\n" .
+                "- `/describe lead` · `/describe contato` · `/describe caso`\n" .
+                "- `/describe pedido` · `/describe cotação` · `/describe produto`\n" .
                 "- `/describe Custom_Object__c`",
                 'info'
             );
         }
-        return chamarMCP("/api/describe/" . urlencode($objeto), 'GET');
+        $resolved = resolverObjeto($objeto);
+        $apiName  = $resolved['apiName'];
+        $nota     = $resolved['resolved']
+            ? "\n\n> 🔄 `{$resolved['original']}` → `{$apiName}`"
+            : '';
+
+        $resultado = chamarMCP("/api/describe/" . urlencode($apiName), 'GET');
+
+        // Injeta a nota de resolução no início da resposta
+        if ($nota && isset($resultado['choices'][0]['message']['content'])) {
+            $resultado['choices'][0]['message']['content'] =
+                $nota . "\n\n" . $resultado['choices'][0]['message']['content'];
+        }
+
+        return $resultado;
     }
 
     // ── /scratch ──
