@@ -13,7 +13,7 @@ define('MCP_SERVER', 'https://mcp-sf-provisioning-462dd29c2455.herokuapp.com');
  */
 function isDeployTrigger(string $mensagem): bool {
     $mensagem = mb_strtolower(trim($mensagem));
-    $triggers = ['/deploy', '/describe', '/status', '/scratch', '/mock'];
+    $triggers = ['/deploy', '/describe', '/status', '/scratch', '/mock', '/help', '/comandos'];
     foreach ($triggers as $t) {
         if (str_starts_with($mensagem, $t)) return true;
     }
@@ -34,6 +34,40 @@ function isDeployTrigger(string $mensagem): bool {
 function processarDeploy(string $mensagem, array $historico): ?array {
     $msg = trim($mensagem);
     $msgLower = mb_strtolower($msg);
+
+    // ── /help ou /comandos ──
+    if (str_starts_with($msgLower, '/help') || str_starts_with($msgLower, '/comandos')) {
+        return respostaDeploy(
+            "## Comandos do Spec AI\n\n" .
+            "---\n\n" .
+            "### 📝 Geração de Documentos (via IA)\n\n" .
+            "| Comando | O que faz |\n|---|---|\n" .
+            "| `/hf` | **História Funcional** — Gera documento com 14 seções a partir de uma necessidade de negócio. Download automático em .docx |\n" .
+            "| `/spec` | **Especificação Técnica** — Gera spec com 18 seções (inclui Runbook de implementação) a partir de uma HF ou requisito. Download automático em .docx |\n" .
+            "| `/ata` | **Ata de Reunião** — Transforma transcrição ou anotações em ata profissional com 11 seções. Download automático em .docx |\n\n" .
+            "**Como usar:**\n\n" .
+            "- `/hf Criar módulo de visitas com check-in geolocalizado no Sales Cloud`\n" .
+            "- `/spec` + cole a história funcional gerada pelo `/hf`\n" .
+            "- `/ata Reunião sobre modelagem de produtos B2B. Participantes: João, Maria...`\n\n" .
+            "**Fluxo encadeado:** `/hf` → gera HF → `/spec` + cola a HF → gera Spec com Runbook → `/deploy` + manifest JSON → org configurada\n\n" .
+            "---\n\n" .
+            "### ☁️ Salesforce (MCP Server direto)\n\n" .
+            "| Comando | O que faz |\n|---|---|\n" .
+            "| `/deploy {JSON}` | Deploya manifest JSON na org Salesforce |\n" .
+            "| `/status` | Verifica conexão com a org (Org ID, username, URL) |\n" .
+            "| `/describe conta` | Consulta objeto — aceita PT-BR: conta, oportunidade, lead, caso, pedido, cotação... |\n" .
+            "| `/scratch list` | Lista scratch orgs ativas |\n" .
+            "| `/scratch create leads` | Cria scratch org por workstream |\n" .
+            "| `/scratch delete {orgId}` | Deleta scratch org |\n" .
+            "| `/mock leads-b2b` | Insere dados de teste na org |\n\n" .
+            "---\n\n" .
+            "### 💬 Chat livre\n\n" .
+            "Qualquer mensagem sem comando especial vai para a IA (Grok / OpenRouter) com consulta automática à base de conhecimento local.\n\n" .
+            "---\n\n" .
+            "| `/help` | Exibe esta ajuda |",
+            'info'
+        );
+    }
 
     // ── /status ──
     if (str_starts_with($msgLower, '/status')) {
