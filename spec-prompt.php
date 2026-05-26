@@ -126,13 +126,71 @@ Termos técnicos efetivamente usados no documento (15-40 termos).
 ## 17. Controle de Versão e Aprovação
 Instruções de versionamento e fluxo de aprovação.
 
+## 18. Runbook de Implementação
+Guia passo a passo detalhado para implementar TUDO que está descrito nesta especificação técnica. O Runbook deve ser autocontido — um consultor que nunca viu este projeto deve conseguir implementar seguindo APENAS este Runbook.
+
+### 18.1 Pré-requisitos
+- Acessos necessários (perfis, permissões, orgs)
+- Ferramentas e ambientes (org de desenvolvimento, sandbox, VS Code, SFDX CLI se aplicável)
+- Dependências de outras specs ou configurações que devem existir antes
+
+### 18.2 Ordem de Execução
+Tabela numerada com a sequência EXATA de execução. A ordem importa — dependências devem ser respeitadas.
+| Passo | Ação | Onde (Setup path) | Detalhes | Dependência |
+Exemplo de passos:
+1. Criar Custom Object (se houver)
+2. Criar campos custom (na ordem correta — lookups por último)
+3. Criar Record Types
+4. Configurar Page Layouts por Record Type
+5. Criar Validation Rules
+6. Configurar Flows (na ordem: subfows primeiro, depois os principais)
+7. Criar Apex classes (se aplicável — test classes junto)
+8. Configurar Permission Sets
+9. Atribuir Permission Sets aos perfis
+10. Configurar Sharing Rules / OWD (se aplicável)
+11. Criar Reports e Dashboards
+12. Configurar Lightning App / Tabs
+13. Testes e validação
+
+### 18.3 Instruções Detalhadas por Componente
+Para CADA componente listado na seção 12 (Estratégia de Deploy), forneça:
+- **Caminho no Setup**: Setup → [caminho exato] (ex: Setup → Object Manager → Lead → Fields → New)
+- **Configuração passo a passo**: cada campo/checkbox/opção a ser preenchido
+- **Valores exatos**: API Names, labels, tipos, fórmulas completas, mensagens de erro
+- **Validação**: como confirmar que o passo foi feito corretamente
+- Para Flows: descrever cada elemento (Start → Get Records → Decision → Update → End) com os valores de configuração
+- Para Apex: código completo ou pseudo-código funcional com instruções de deploy
+
+### 18.4 Configuração de Dados Iniciais
+- Dados de referência que precisam ser inseridos (ex: picklist values, Custom Metadata records)
+- Dados de teste recomendados para validação
+- Ordem de inserção (objetos pai antes de filhos)
+
+### 18.5 Checklist de Validação Pós-Implementação
+| # | Verificação | Como validar | Resultado esperado | OK? |
+Incluir verificação de CADA componente implementado:
+- Objeto/campo existe e é visível
+- Validation rules disparam corretamente
+- Flows executam conforme esperado
+- Permissões estão corretas
+- Page layouts exibem os campos certos por Record Type
+- Reports retornam dados
+- Apex classes passam nos testes (coverage ≥ 75%)
+
+### 18.6 Rollback
+Procedimento para reverter a implementação caso algo dê errado:
+- Ordem reversa de remoção (o contrário da ordem de criação)
+- Componentes que NÃO podem ser deletados via UI (ex: Record Types — só desativados)
+- Impacto em dados existentes
+
 ---
 REGRAS FINAIS:
-- TODAS as 17 seções obrigatórias, mesmo que com "N/A"
+- TODAS as 18 seções obrigatórias, mesmo que com "N/A"
 - API Names corretos (Object__c, Field__c)
 - Pseudo-código para Apex, step-by-step para Flows
 - Seção 05.1 (OOTB) ANTES de 05.2 (Flows) e 05.3 (Apex) SEMPRE
 - Glossário DINÂMICO com termos efetivamente usados
+- Seção 18 (Runbook) DEVE ser detalhada o suficiente para implementação autônoma
 - Responda APENAS com o documento, sem mensagens extras
 
 PROMPT;
