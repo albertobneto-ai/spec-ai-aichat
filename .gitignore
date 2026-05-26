@@ -1,0 +1,19 @@
+# Configuração com credenciais reais
+config.php
+
+# Base de conhecimento (dados locais)
+knowledge_base/*.txt
+knowledge_base/*.md
+!knowledge_base/.htaccess
+
+# Arquivos de teste
+teste-*.php
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
