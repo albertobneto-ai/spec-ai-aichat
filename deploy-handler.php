@@ -292,6 +292,17 @@ function formatarRespostaMCP($dados, int $httpCode): string {
             }
         }
 
+        // Org Info
+        $orgInfo = buscarInfoOrg();
+        if ($orgInfo) {
+            $msg .= "\n---\n**Org conectada:**\n\n";
+            $msg .= "| Campo | Valor |\n|---|---|\n";
+            $msg .= "| Org ID | `{$orgInfo['orgId']}` |\n";
+            $msg .= "| Username | `{$orgInfo['username']}` |\n";
+            $msg .= "| Display Name | {$orgInfo['displayName']} |\n";
+            $msg .= "| URL | `{$orgInfo['loginUrl']}` |\n";
+        }
+
         return $msg;
     }
 
@@ -323,6 +334,51 @@ function respostaDeploy(string $conteudo, string $tipo = 'deploy'): array {
         'modelo_label' => 'Salesforce MCP',
         'tipo'         => $tipo,
     ];
+}
+
+/**
+ * Busca informações da org conectada (com cache em sessão)
+ */
+function buscarInfoOrg(): ?array {
+    // Cache na sessão para não chamar toda vez
+    if (!empty($_SESSION['org_info']) && ($_SESSION['org_info_ts'] ?? 0) > time() - 300) {
+        return $_SESSION['org_info'];
+    }
+
+    $url = MCP_SERVER . '/test-connection';
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+    ]);
+    $resp = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code !== 200) return null;
+
+    $dados = json_decode($resp, true);
+    if (!$dados || $dados['status'] !== 'connected') return null;
+
+    // Monta info com URL da org
+    $orgInfo = [
+        'orgId'       => $dados['orgId'] ?? '?',
+        'username'    => $dados['username'] ?? '?',
+        'displayName' => $dados['displayName'] ?? '?',
+        'loginUrl'    => $dados['instanceUrl']
+            ?? ('https://' . str_replace('.my.salesforce.com', '', parse_url(MCP_SERVER, PHP_URL_HOST)) . '.my.salesforce.com'),
+    ];
+
+    // Tenta pegar a URL real da org via instanceUrl
+    if (empty($dados['instanceUrl'])) {
+        // Fallback: constrói a partir do orgId
+        $orgInfo['loginUrl'] = 'Acessar via DevHub ou Setup';
+    }
+
+    $_SESSION['org_info'] = $orgInfo;
+    $_SESSION['org_info_ts'] = time();
+
+    return $orgInfo;
 }
 
 /**
