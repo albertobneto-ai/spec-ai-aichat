@@ -7,6 +7,8 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/hf-prompt.php';
 require_once __DIR__ . '/ata-prompt.php';
+require_once __DIR__ . '/spec-prompt.php';
+require_once __DIR__ . '/deploy-handler.php';
 
 header('Content-Type: application/json');
 
@@ -129,12 +131,24 @@ foreach (array_reverse($messages) as $msg) {
     if ($msg['role'] === 'user') { $ultimaMensagem = $msg['content']; break; }
 }
 
-$modoHF      = isHFTrigger($ultimaMensagem);
-$modoAta     = !$modoHF && isAtaTrigger($ultimaMensagem);
-$necessidade = $modoHF ? extrairNecessidade($ultimaMensagem) : '';
-$conteudoAta = $modoAta ? extrairConteudoAta($ultimaMensagem) : '';
+$modoDeploy  = isDeployTrigger($ultimaMensagem);
+$modoHF      = !$modoDeploy && isHFTrigger($ultimaMensagem);
+$modoSpec    = !$modoDeploy && !$modoHF && isSpecTrigger($ultimaMensagem);
+$modoAta     = !$modoDeploy && !$modoHF && !$modoSpec && isAtaTrigger($ultimaMensagem);
+$necessidade  = $modoHF ? extrairNecessidade($ultimaMensagem) : '';
+$conteudoSpec = $modoSpec ? extrairConteudoSpec($ultimaMensagem) : '';
+$conteudoAta  = $modoAta ? extrairConteudoAta($ultimaMensagem) : '';
 
 // ── MONTA O SYSTEM PROMPT ──────────────────────────────────────────────
+
+// ── MODO DEPLOY (chama MCP Server direto, sem IA) ────────────────────
+if ($modoDeploy) {
+    $resultado = processarDeploy($ultimaMensagem, $messages);
+    if ($resultado) {
+        echo json_encode($resultado);
+        exit;
+    }
+}
 
 if ($modoAta) {
     // Modo ATA
@@ -195,6 +209,38 @@ if ($modoAta) {
 
     // Substitui a última mensagem do usuário pela necessidade formatada
     $msgFormatada = "Gere uma História Funcional Salesforce completa (14 seções) para a seguinte necessidade de negócio:\n\n" . $necessidade;
+    foreach ($messages as &$m) {
+        if ($m === end($messages) && $m['role'] === 'user') {
+            $m['content'] = $msgFormatada;
+        }
+    }
+    unset($m);
+
+} elseif ($modoSpec) {
+    // Modo SPEC: busca contexto da KB e usa prompt de spec técnica
+    $termosBusca = !empty($conteudoSpec) ? $conteudoSpec : $ultimaMensagem;
+    $contextoKB  = buscarBaseConhecimento($termosBusca, 5);
+    $systemPrompt = getSpecPrompt($contextoKB);
+    $maxTokens    = 8192;
+    $temperature  = 0.3;
+
+    if (empty($conteudoSpec)) {
+        echo json_encode([
+            'choices' => [['message' => ['content' =>
+                "Para gerar a **Especificação Técnica**, forneça a história funcional ou requisito.\n\n" .
+                "Exemplos:\n" .
+                "- `/spec` + cole a história funcional gerada pelo `/hf`\n" .
+                "- `/spec Criar módulo de visitas com check-in geolocalizado`\n\n" .
+                "Pode ser um requisito curto ou uma HF completa — eu gero as 17 seções."
+            ]]],
+            'modelo_usado' => 'system',
+            'modelo_label' => 'Sistema',
+            'tipo'         => 'info',
+        ]);
+        exit;
+    }
+
+    $msgFormatada = "Gere uma Especificação Técnica Salesforce completa (17 seções) para o seguinte requisito/história funcional:\n\n" . $conteudoSpec;
     foreach ($messages as &$m) {
         if ($m === end($messages) && $m['role'] === 'user') {
             $m['content'] = $msgFormatada;
@@ -321,6 +367,7 @@ do {
                 $dados['modelo_usado'] = $modeloUsado;
                 $dados['modelo_label'] = $modeloLabel;
                 if ($modoHF) $dados['tipo'] = 'hf';
+                if ($modoSpec) $dados['tipo'] = 'spec';
                 if ($modoAta) $dados['tipo'] = 'ata';
                 $resultado = $dados;
                 break 2;
