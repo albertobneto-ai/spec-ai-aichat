@@ -231,7 +231,7 @@ if ($modoAta) {
                 "Exemplos:\n" .
                 "- `/spec` + cole a história funcional gerada pelo `/hf`\n" .
                 "- `/spec Criar módulo de visitas com check-in geolocalizado`\n\n" .
-                "Pode ser um requisito curto ou uma HF completa — eu gero as 17 seções."
+                "Pode ser um requisito curto ou uma HF completa — eu gero as 18 seções (com Runbook)."
             ]]],
             'modelo_usado' => 'system',
             'modelo_label' => 'Sistema',
@@ -240,7 +240,7 @@ if ($modoAta) {
         exit;
     }
 
-    $msgFormatada = "Gere uma Especificação Técnica Salesforce completa (17 seções) para o seguinte requisito/história funcional:\n\n" . $conteudoSpec;
+    $msgFormatada = "Gere uma Especificação Técnica Salesforce completa (18 seções, incluindo Runbook de implementação) para o seguinte requisito/história funcional:\n\n" . $conteudoSpec;
     foreach ($messages as &$m) {
         if ($m === end($messages) && $m['role'] === 'user') {
             $m['content'] = $msgFormatada;
