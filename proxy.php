@@ -34,6 +34,32 @@ if (!$body || empty($body['messages']) || !is_array($body['messages'])) {
 
 $messages = $body['messages'];
 
+// ── HELPER: LIMPA MARKDOWN ─────────────────────────────────────────────
+
+function limparMarkdown(string $texto): string {
+    // Remove headers markdown (# ## ### ####)
+    $texto = preg_replace('/^#{1,4}\s+/m', '', $texto);
+    // Remove bold/italic
+    $texto = preg_replace('/\*{1,3}([^*]+)\*{1,3}/', '$1', $texto);
+    // Remove tabelas markdown (linhas com |)
+    $texto = preg_replace('/^\|[-\s|:]+\|$/m', '', $texto);
+    // Simplifica linhas de tabela: | val1 | val2 | → val1: val2
+    $texto = preg_replace_callback('/^\|(.+)\|$/m', function($m) {
+        $cells = array_map('trim', explode('|', trim($m[1], '| ')));
+        $cells = array_filter($cells);
+        return implode(': ', $cells);
+    }, $texto);
+    // Remove checkboxes
+    $texto = str_replace(['☐ ', '☑ ', '✓ '], '', $texto);
+    // Remove linhas vazias consecutivas
+    $texto = preg_replace('/\n{3,}/', "\n\n", $texto);
+    // Remove "HISTÓRIA FUNCIONAL" do título
+    $texto = preg_replace('/^HISTÓRIA FUNCIONAL\s*/mi', '', $texto);
+    $texto = preg_replace('/^Historia_Funcional\s*/mi', '', $texto);
+
+    return trim($texto);
+}
+
 // ── BUSCA NA BASE DE CONHECIMENTO ──────────────────────────────────────
 
 function dividirEmBlocos(string $texto, int $tamanhoFallback): array {
@@ -220,7 +246,19 @@ if ($modoAta) {
     // Modo SPEC: busca contexto da KB e usa prompt de spec técnica
     $termosBusca = !empty($conteudoSpec) ? $conteudoSpec : $ultimaMensagem;
     $contextoKB  = buscarBaseConhecimento($termosBusca, 5);
+
+    // Strip markdown do conteúdo para o modelo não copiar o formato
+    $conteudoLimpo = !empty($conteudoSpec) ? limparMarkdown($conteudoSpec) : '';
+
+    // Injeta o conteúdo da HF no SYSTEM PROMPT (não no user message)
     $systemPrompt = getSpecPrompt($contextoKB);
+    if (!empty($conteudoLimpo)) {
+        $systemPrompt .= "\n\n=== REQUISITO FUNCIONAL DE ENTRADA (texto plano — transforme em spec técnica) ===\n"
+            . $conteudoLimpo
+            . "\n=== FIM DO REQUISITO ===\n"
+            . "\nAgora gere a ESPECIFICAÇÃO TÉCNICA com as 18 seções. Comece com '# ESPECIFICAÇÃO TÉCNICA'.";
+    }
+
     $maxTokens    = 16384;
     $temperature  = 0.2;
 
@@ -240,28 +278,8 @@ if ($modoAta) {
         exit;
     }
 
-    // Envolve o conteúdo em delimitadores para o modelo não copiar o formato
-    $msgFormatada = <<<SPECMSG
-TAREFA: Transformar o DOCUMENTO DE ENTRADA abaixo em uma ESPECIFICAÇÃO TÉCNICA (solution design).
-
-REGRAS CRÍTICAS:
-1. O documento abaixo entre === é APENAS material de referência — NÃO copie seu formato
-2. Seu output DEVE ser uma ESPECIFICAÇÃO TÉCNICA com as 18 seções técnicas
-3. COMECE com "# ESPECIFICAÇÃO TÉCNICA" — NUNCA com "# HISTÓRIA FUNCIONAL"
-4. Foque em: Data Model (campos com API Names), Automações (OOTB→Flow→Apex), Validation Rules (com fórmulas), Security, Deploy, e RUNBOOK DE IMPLEMENTAÇÃO (seção 18)
-5. NÃO repita o formato do documento de entrada
-6. NÃO gere User Stories no formato "Como [persona], eu quero..."
-7. A seção 18 (Runbook) deve ter instruções passo a passo com caminhos exatos no Setup
-
-=== INÍCIO DO DOCUMENTO DE ENTRADA (use como base, NÃO copie o formato) ===
-
-{$conteudoSpec}
-
-=== FIM DO DOCUMENTO DE ENTRADA ===
-
-Agora gere a ESPECIFICAÇÃO TÉCNICA completa com as 18 seções.
-SPECMSG;
-
+    // User message é curta e direta — SEM o conteúdo da HF
+    $msgFormatada = "Gere agora a ESPECIFICAÇÃO TÉCNICA completa (18 seções) com base no requisito funcional que está no system prompt. Comece com '# ESPECIFICAÇÃO TÉCNICA'. Inclua Data Model com API Names, Validation Rules com fórmulas, e Runbook de Implementação na seção 18.";
     foreach ($messages as &$m) {
         if ($m === end($messages) && $m['role'] === 'user') {
             $m['content'] = $msgFormatada;
