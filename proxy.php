@@ -221,8 +221,8 @@ if ($modoAta) {
     $termosBusca = !empty($conteudoSpec) ? $conteudoSpec : $ultimaMensagem;
     $contextoKB  = buscarBaseConhecimento($termosBusca, 5);
     $systemPrompt = getSpecPrompt($contextoKB);
-    $maxTokens    = 8192;
-    $temperature  = 0.3;
+    $maxTokens    = 16384;
+    $temperature  = 0.2;
 
     if (empty($conteudoSpec)) {
         echo json_encode([
@@ -240,7 +240,10 @@ if ($modoAta) {
         exit;
     }
 
-    $msgFormatada = "Gere uma Especificação Técnica Salesforce completa (18 seções, incluindo Runbook de implementação) para o seguinte requisito/história funcional:\n\n" . $conteudoSpec;
+    $msgFormatada = "IMPORTANTE: Gere uma ESPECIFICAÇÃO TÉCNICA (solution design), NÃO uma história funcional.\n"
+        . "O documento DEVE começar com '# ESPECIFICAÇÃO TÉCNICA' e conter as 18 seções técnicas incluindo Data Model, Automações, Security, Deploy e Runbook de Implementação (seção 18).\n"
+        . "NÃO gere user stories no formato 'Como [persona], eu quero...'.\n\n"
+        . "Requisito/história funcional de entrada:\n\n" . $conteudoSpec;
     foreach ($messages as &$m) {
         if ($m === end($messages) && $m['role'] === 'user') {
             $m['content'] = $msgFormatada;
