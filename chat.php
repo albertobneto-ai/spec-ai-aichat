@@ -16,6 +16,8 @@ $modelos   = MODELOS; // array definido em config.php
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
 <title>Spec AI</title>
+<link rel="icon" type="image/png" href="<?= BASE_URL ?>/favicon.png"/>
+<link rel="apple-touch-icon" href="<?= BASE_URL ?>/apple-touch-icon.png"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
