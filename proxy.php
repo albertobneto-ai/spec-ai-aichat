@@ -240,10 +240,28 @@ if ($modoAta) {
         exit;
     }
 
-    $msgFormatada = "IMPORTANTE: Gere uma ESPECIFICAÇÃO TÉCNICA (solution design), NÃO uma história funcional.\n"
-        . "O documento DEVE começar com '# ESPECIFICAÇÃO TÉCNICA' e conter as 18 seções técnicas incluindo Data Model, Automações, Security, Deploy e Runbook de Implementação (seção 18).\n"
-        . "NÃO gere user stories no formato 'Como [persona], eu quero...'.\n\n"
-        . "Requisito/história funcional de entrada:\n\n" . $conteudoSpec;
+    // Envolve o conteúdo em delimitadores para o modelo não copiar o formato
+    $msgFormatada = <<<SPECMSG
+TAREFA: Transformar o DOCUMENTO DE ENTRADA abaixo em uma ESPECIFICAÇÃO TÉCNICA (solution design).
+
+REGRAS CRÍTICAS:
+1. O documento abaixo entre === é APENAS material de referência — NÃO copie seu formato
+2. Seu output DEVE ser uma ESPECIFICAÇÃO TÉCNICA com as 18 seções técnicas
+3. COMECE com "# ESPECIFICAÇÃO TÉCNICA" — NUNCA com "# HISTÓRIA FUNCIONAL"
+4. Foque em: Data Model (campos com API Names), Automações (OOTB→Flow→Apex), Validation Rules (com fórmulas), Security, Deploy, e RUNBOOK DE IMPLEMENTAÇÃO (seção 18)
+5. NÃO repita o formato do documento de entrada
+6. NÃO gere User Stories no formato "Como [persona], eu quero..."
+7. A seção 18 (Runbook) deve ter instruções passo a passo com caminhos exatos no Setup
+
+=== INÍCIO DO DOCUMENTO DE ENTRADA (use como base, NÃO copie o formato) ===
+
+{$conteudoSpec}
+
+=== FIM DO DOCUMENTO DE ENTRADA ===
+
+Agora gere a ESPECIFICAÇÃO TÉCNICA completa com as 18 seções.
+SPECMSG;
+
     foreach ($messages as &$m) {
         if ($m === end($messages) && $m['role'] === 'user') {
             $m['content'] = $msgFormatada;
