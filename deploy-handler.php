@@ -169,17 +169,35 @@ function processarDeploy(string $mensagem, array $historico): ?array {
 
             if (!empty($ultimaResposta) && (
                 str_contains($ultimaResposta, '## 04. Data Model') ||
+                str_contains($ultimaResposta, '## 04.') ||
                 str_contains($ultimaResposta, 'API Name') ||
                 str_contains($ultimaResposta, '__c')
             )) {
-                return respostaDeploy(
-                    "Detectei uma spec/HF recente na conversa. Para deployar, preciso que o conteúdo seja processado por uma IA com capacidade de gerar manifests JSON.\n\n" .
-                    "**Opções:**\n" .
-                    "1. Cole o manifest JSON diretamente: `/deploy {\"specName\":\"...\", \"metadata\":{...}}`\n" .
-                    "2. Use o Claude (claude.ai) para gerar o manifest a partir da spec e cole aqui\n\n" .
-                    "**Formato do manifest:**\n```json\n{\n  \"specName\": \"Nome_Descritivo\",\n  \"metadata\": {\n    \"customObjects\": [],\n    \"customFields\": [],\n    \"validationRules\": [],\n    \"recordTypes\": []\n  }\n}\n```",
-                    'info'
-                );
+                // Envia a spec para o Grok gerar o manifest JSON automaticamente
+                $manifest = gerarManifestViaIA($ultimaResposta);
+                if ($manifest) {
+                    // Manifest gerado — faz o deploy
+                    $b64 = base64url_encode($manifest);
+                    $resultado = chamarMCP('/api/deploy-b64/' . $b64, 'GET');
+                    // Injeta info sobre o manifest gerado
+                    if (isset($resultado['choices'][0]['message']['content'])) {
+                        $resultado['choices'][0]['message']['content'] =
+                            "🤖 Manifest gerado automaticamente pela IA a partir da spec.\n\n"
+                            . $resultado['choices'][0]['message']['content']
+                            . "\n\n<details><summary>📋 Manifest JSON usado</summary>\n\n```json\n"
+                            . json_encode(json_decode($manifest, true), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+                            . "\n```\n</details>";
+                    }
+                    return $resultado;
+                } else {
+                    return respostaDeploy(
+                        "❌ Não consegui gerar o manifest automaticamente a partir da spec.\n\n" .
+                        "Cole o manifest JSON manualmente:\n" .
+                        "`/deploy {\"specName\":\"...\", \"metadata\":{...}}`\n\n" .
+                        "Ou gere o manifest no Claude (claude.ai) com `/deploy` + a spec.",
+                        'error'
+                    );
+                }
             }
 
             return respostaDeploy(
@@ -368,6 +386,114 @@ function respostaDeploy(string $conteudo, string $tipo = 'deploy'): array {
         'modelo_label' => 'Salesforce MCP',
         'tipo'         => $tipo,
     ];
+}
+
+/**
+ * Chama o Grok para extrair manifest JSON de uma spec/HF
+ */
+function gerarManifestViaIA(string $specContent): ?string {
+    if (!defined('GROK_KEY') || !GROK_KEY) return null;
+
+    $prompt = <<<PROMPT
+Você é um extrator de metadados Salesforce. Analise o documento abaixo e gere APENAS um JSON de manifest no formato exato especificado. NÃO inclua texto, explicações ou markdown — APENAS o JSON puro.
+
+FORMATO DO JSON (siga EXATAMENTE esta estrutura):
+{
+  "specName": "Nome_Descritivo_Da_Spec",
+  "metadata": {
+    "customObjects": [],
+    "customFields": [
+      {
+        "object": "NomeDoObjeto",
+        "fullName": "NomeDoObjeto.Nome_Campo__c",
+        "label": "Label do Campo",
+        "type": "Text",
+        "length": 100
+      }
+    ],
+    "validationRules": [
+      {
+        "object": "NomeDoObjeto",
+        "fullName": "NomeDoObjeto.Nome_Rule",
+        "active": true,
+        "errorConditionFormula": "ISBLANK(Campo__c)",
+        "errorMessage": "Mensagem de erro"
+      }
+    ],
+    "recordTypes": [
+      {
+        "object": "NomeDoObjeto",
+        "fullName": "NomeDoObjeto.Nome_RT",
+        "label": "Nome do Record Type",
+        "active": true
+      }
+    ]
+  }
+}
+
+REGRAS:
+- Tipos de campo válidos: Text, Number, Currency, Percent, Date, DateTime, Checkbox, Picklist, MultiselectPicklist, TextArea, LongTextArea, Lookup, Email, Phone, Url
+- Para Text: inclua "length" (1-255)
+- Para Number/Currency/Percent: inclua "precision" (até 18) e "scale" (casas decimais)
+- Para Picklist: inclua "picklistValues": [{"fullName":"Valor1","default":false}]
+- Para Lookup: inclua "referenceTo":"ObjetoAlvo" e "relationshipLabel":"Label"
+- Para LongTextArea: inclua "length":32768 e "visibleLines":4
+- Se um campo é padrão do Salesforce (Name, Email, Phone, etc), NÃO inclua — só campos CUSTOM (__c)
+- Se a spec menciona mapeamento de campos padrão (ex: Lead Field Mapping), NÃO crie campos — são configurações OOTB
+- fullName SEMPRE no formato "Objeto.Campo__c"
+- Se não houver campos custom para criar, retorne customFields como array vazio []
+- Responda APENAS com o JSON, sem ```json, sem explicação, sem texto antes ou depois
+
+DOCUMENTO:
+PROMPT;
+
+    $payload = json_encode([
+        'model'       => 'grok-4.3',
+        'messages'    => [
+            ['role' => 'system', 'content' => $prompt],
+            ['role' => 'user', 'content' => $specContent],
+        ],
+        'max_tokens'  => 4096,
+        'temperature' => 0.1,
+    ]);
+
+    $ch = curl_init('https://api.x.ai/v1/chat/completions');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . GROK_KEY,
+        ],
+        CURLOPT_TIMEOUT => 60,
+    ]);
+
+    $resp = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code !== 200) return null;
+
+    $dados = json_decode($resp, true);
+    $content = $dados['choices'][0]['message']['content'] ?? '';
+
+    // Limpa possíveis wrappers markdown
+    $content = trim($content);
+    $content = preg_replace('/^```json\s*/i', '', $content);
+    $content = preg_replace('/```\s*$/', '', $content);
+    $content = trim($content);
+
+    // Valida se é JSON válido com a estrutura esperada
+    $manifest = json_decode($content, true);
+    if (!$manifest || !isset($manifest['metadata'])) return null;
+
+    // Garante specName
+    if (empty($manifest['specName'])) {
+        $manifest['specName'] = 'AutoDeploy_' . date('Y-m-d_His');
+    }
+
+    return json_encode($manifest);
 }
 
 /**
