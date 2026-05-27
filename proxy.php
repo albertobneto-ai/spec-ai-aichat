@@ -328,7 +328,7 @@ $messagesComSystem = array_merge(
 // ── MODO SPEC: Claude Sonnet (Anthropic API) ──────────────────────────
 if (!empty($usarClaude) && defined('ANTHROPIC_KEY') && ANTHROPIC_KEY) {
     $payload = json_encode([
-        'model'      => 'claude-sonnet-4-20250514',
+        'model'      => 'claude-sonnet-4-6',
         'max_tokens' => $maxTokens,
         'system'     => $systemPrompt,
         'messages'   => $messages,
@@ -356,7 +356,7 @@ if (!empty($usarClaude) && defined('ANTHROPIC_KEY') && ANTHROPIC_KEY) {
     if ($httpCode === 200 && isset($dados['content'][0]['text'])) {
         echo json_encode([
             'choices'      => [['message' => ['content' => $dados['content'][0]['text']]]],
-            'modelo_usado' => 'claude-sonnet-4-20250514',
+            'modelo_usado' => 'claude-sonnet-4-6',
             'modelo_label' => 'Claude Sonnet 4',
             'tipo'         => 'spec',
         ]);
