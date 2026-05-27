@@ -158,14 +158,16 @@ foreach (array_reverse($messages) as $msg) {
 }
 
 $modoDeploy  = isDeployTrigger($ultimaMensagem);
-$modoHF      = !$modoDeploy && isHFTrigger($ultimaMensagem);
-$modoSpec    = !$modoDeploy && !$modoHF && isSpecTrigger($ultimaMensagem);
-$modoAta     = !$modoDeploy && !$modoHF && !$modoSpec && isAtaTrigger($ultimaMensagem);
+// IMPORTANTE: /spec ANTES de /hf — porque a HF colada contém "história funcional"
+// que ativaria isHFTrigger via str_contains se checada primeiro
+$modoSpec    = !$modoDeploy && isSpecTrigger($ultimaMensagem);
+$modoHF      = !$modoDeploy && !$modoSpec && isHFTrigger($ultimaMensagem);
+$modoAta     = !$modoDeploy && !$modoSpec && !$modoHF && isAtaTrigger($ultimaMensagem);
 $necessidade  = $modoHF ? extrairNecessidade($ultimaMensagem) : '';
 $conteudoSpec = $modoSpec ? extrairConteudoSpec($ultimaMensagem) : '';
 $conteudoAta  = $modoAta ? extrairConteudoAta($ultimaMensagem) : '';
-$apenasGrok   = false; // Flag: se true, pula modelos free (OpenRouter)
-$modeloForcar = null;  // Se definido, usa APENAS este modelo (para /spec)
+$apenasGrok   = false;
+$modeloForcar = null;
 $modeloForcarLabel = null;
 
 // ── MONTA O SYSTEM PROMPT ──────────────────────────────────────────────
