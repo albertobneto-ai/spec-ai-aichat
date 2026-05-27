@@ -291,10 +291,9 @@ if ($modoAta) {
     // Se não limpar, o modelo vê HFs anteriores e copia o formato
     $messages = [['role' => 'user', 'content' => $msgFormatada]];
 
-    // /spec usa Claude Sonnet — maior precisão técnica em Salesforce
+    // /spec usa APENAS Grok — modelos free não seguem o prompt
     $modelosSpec = [];
-    $apenasGrok  = true;
-    $usarClaude  = true;
+    $apenasGrok = true;
 
 } else {
     // Modo normal — com data e anti-alucinação
@@ -324,72 +323,6 @@ $messagesComSystem = array_merge(
     [['role' => 'system', 'content' => $systemPrompt]],
     $messages
 );
-
-// ── MODO SPEC: Claude Sonnet (Anthropic API) ──────────────────────────
-if (!empty($usarClaude) && defined('ANTHROPIC_KEY') && ANTHROPIC_KEY) {
-    // Evita que o PHP mate o script antes do Claude responder
-    set_time_limit(300);
-    ignore_user_abort(true);
-
-    $payload = json_encode([
-        'model'      => 'claude-sonnet-4-6',
-        'max_tokens' => $maxTokens,
-        'system'     => $systemPrompt,
-        'messages'   => $messages,
-    ], JSON_UNESCAPED_UNICODE);
-
-    $ch = curl_init('https://api.anthropic.com/v1/messages');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $payload,
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'x-api-key: ' . ANTHROPIC_KEY,
-            'anthropic-version: 2023-06-01',
-        ],
-        CURLOPT_TIMEOUT        => 240,
-        CURLOPT_CONNECTTIMEOUT => 15,
-    ]);
-
-    $resposta  = curl_exec($ch);
-    $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlError = curl_error($ch);
-    curl_close($ch);
-
-    // cURL falhou (SSL, DNS, timeout)
-    if ($resposta === false) {
-        http_response_code(503);
-        echo json_encode(['erro' => "Falha de conexão com Claude: {$curlError}"]);
-        exit;
-    }
-
-    $dados = json_decode($resposta, true);
-
-    if ($httpCode === 200 && isset($dados['content'][0]['text'])) {
-        $saida = json_encode([
-            'choices'      => [['message' => ['content' => $dados['content'][0]['text']]]],
-            'modelo_usado' => 'claude-sonnet-4-6',
-            'modelo_label' => 'Claude Sonnet 4',
-            'tipo'         => 'spec',
-        ], JSON_UNESCAPED_UNICODE);
-
-        // Garante que o JSON é válido
-        if ($saida === false) {
-            echo json_encode(['erro' => 'Erro ao codificar resposta do Claude: ' . json_last_error_msg()]);
-        } else {
-            echo $saida;
-        }
-    } else {
-        http_response_code(503);
-        echo json_encode([
-            'erro'      => 'Claude retornou erro.',
-            'http_code' => $httpCode,
-            'detalhe'   => mb_substr($resposta ?: '', 0, 500),
-        ]);
-    }
-    exit;
-}
 
 // ── CONSULTA TODOS OS MODELOS SIMULTANEAMENTE ──────────────────────────
 
