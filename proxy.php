@@ -291,13 +291,9 @@ if ($modoAta) {
     // Se não limpar, o modelo vê HFs anteriores e copia o formato
     $messages = [['role' => 'user', 'content' => $msgFormatada]];
 
-    // Para /spec, inclui Qwen3 235B na corrida junto com Grok
-    $modelosSpec = [
-        'qwen/qwen3-235b-a22b:free' => 'Qwen3 235B',
-        'deepseek/deepseek-r1:free' => 'DeepSeek R1',
-    ];
-    $modeloForcar = null;
-    $apenasGrok = false;
+    // /spec usa APENAS Grok — modelos free não seguem o prompt
+    $modelosSpec = [];
+    $apenasGrok = true;
 
 } else {
     // Modo normal — com data e anti-alucinação
@@ -335,14 +331,13 @@ $handles   = [];
 $idx       = 0;
 
 // Determina quais modelos OpenRouter usar
-// Para /spec: Qwen3 + DeepSeek R1 (mais capazes) + os normais
-// Para o resto: só os modelos configurados em config.php
 $orModelos = MODELOS_OPENROUTER;
 if (!empty($modelosSpec)) {
     $orModelos = array_merge($modelosSpec, MODELOS_OPENROUTER);
 }
 
-// Handles para OpenRouter
+// Handles para OpenRouter (pula se apenasGrok = true)
+if (!$apenasGrok) {
 foreach ($orModelos as $modelo => $label) {
     $payload = json_encode([
         'model'       => $modelo,
@@ -368,6 +363,7 @@ foreach ($orModelos as $modelo => $label) {
     curl_multi_add_handle($multiCurl, $ch);
     $handles[$idx] = ['curl' => $ch, 'modelo' => $modelo, 'label' => $label];
     $idx++;
+}
 }
 
 // Handles para xAI / Grok
