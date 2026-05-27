@@ -2,6 +2,7 @@
 // ============================================================
 //  deploy-handler.php  —  Integração com MCP Salesforce Server
 //  Trigger: /deploy, /describe, /status, /scratch
+//  Versão: 2.0 (com auto-manifest via Grok)
 // ============================================================
 
 require_once __DIR__ . '/alias-map.php';
@@ -201,13 +202,13 @@ function processarDeploy(string $mensagem, array $historico): ?array {
             }
 
             return respostaDeploy(
-                "Para deployar metadados na org Salesforce, informe:\n\n" .
-                "- `/deploy {manifest JSON}` — Deploy direto\n" .
-                "- `/deploy` após gerar uma `/spec` — Usa a spec da conversa\n\n" .
-                "Ou use os outros comandos:\n" .
-                "- `/status` — Verificar conexão com a org\n" .
-                "- `/describe Account` — Consultar objeto\n" .
-                "- `/scratch list` — Gerenciar scratch orgs",
+                "⚠️ Nenhuma spec encontrada na conversa atual.\n\n" .
+                "Para o deploy automático funcionar:\n" .
+                "1. Gere a spec com `/spec` **nesta mesma sessão** (sem recarregar a página)\n" .
+                "2. Depois digite `/deploy` — a IA gera o manifest e deploya automaticamente\n\n" .
+                "Ou cole o manifest JSON diretamente:\n" .
+                "- `/deploy {\"specName\":\"...\", \"metadata\":{...}}`\n\n" .
+                "_deploy-handler v2.0_",
                 'info'
             );
         }
