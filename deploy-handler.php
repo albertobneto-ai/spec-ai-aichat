@@ -453,7 +453,7 @@ REGRAS:
 - Tipos de campo válidos: Text, Number, Currency, Percent, Date, DateTime, Checkbox, Picklist, MultiselectPicklist, TextArea, LongTextArea, Lookup, Email, Phone, Url
 - Para Text: inclua "length" (1-255)
 - Para Number/Currency/Percent: inclua "precision" (até 18) e "scale" (casas decimais)
-- Para Picklist: inclua "picklistValues": [{"fullName":"Valor1","default":false}]
+- Para Picklist: inclua "picklist": ["Valor1", "Valor2", "Valor3"] (array de strings simples)
 - Para Lookup: inclua "referenceTo":"ObjetoAlvo" e "relationshipLabel":"Label"
 - Para LongTextArea: inclua "length":32768 e "visibleLines":4
 - Se um campo é padrão do Salesforce (Name, Email, Phone, etc), NÃO inclua — só campos CUSTOM (__c)
@@ -526,21 +526,19 @@ function corrigirManifest(array $manifest): array {
     foreach ($manifest['metadata']['customFields'] as &$field) {
         $type = $field['type'] ?? '';
 
-        // Picklist sem valores → adiciona placeholder
+        // Picklist: converte picklistValues (formato IA) → picklist (formato MCP Server)
         if (($type === 'Picklist' || $type === 'MultiselectPicklist') &&
-            (empty($field['picklistValues']) || !is_array($field['picklistValues']))) {
-            $label = $field['label'] ?? 'Campo';
-            $field['picklistValues'] = [
-                ['fullName' => 'A definir', 'default' => true],
-            ];
+            !empty($field['picklistValues']) && !isset($field['picklist'])) {
+            $field['picklist'] = array_map(function($v) {
+                return is_array($v) ? ($v['fullName'] ?? $v['label'] ?? $v['value'] ?? 'Valor') : $v;
+            }, $field['picklistValues']);
+            unset($field['picklistValues']);
         }
 
-        // Picklist com array vazio
+        // Picklist sem valores (nem picklistValues nem picklist)
         if (($type === 'Picklist' || $type === 'MultiselectPicklist') &&
-            is_array($field['picklistValues']) && count($field['picklistValues']) === 0) {
-            $field['picklistValues'] = [
-                ['fullName' => 'A definir', 'default' => true],
-            ];
+            empty($field['picklist']) && empty($field['picklistValues'])) {
+            $field['picklist'] = ['A definir'];
         }
 
         // MultiselectPicklist precisa de visibleLines
