@@ -511,7 +511,69 @@ PROMPT;
         $manifest['specName'] = 'AutoDeploy_' . date('Y-m-d_His');
     }
 
+    // Corrige problemas comuns no manifest gerado pela IA
+    $manifest = corrigirManifest($manifest);
+
     return json_encode($manifest);
+}
+
+/**
+ * Corrige problemas comuns no manifest gerado pela IA
+ */
+function corrigirManifest(array $manifest): array {
+    if (!isset($manifest['metadata']['customFields'])) return $manifest;
+
+    foreach ($manifest['metadata']['customFields'] as &$field) {
+        $type = $field['type'] ?? '';
+
+        // Picklist sem valores → adiciona placeholder
+        if (($type === 'Picklist' || $type === 'MultiselectPicklist') &&
+            (empty($field['picklistValues']) || !is_array($field['picklistValues']))) {
+            $label = $field['label'] ?? 'Campo';
+            $field['picklistValues'] = [
+                ['fullName' => 'A definir', 'default' => true],
+            ];
+        }
+
+        // Picklist com array vazio
+        if (($type === 'Picklist' || $type === 'MultiselectPicklist') &&
+            is_array($field['picklistValues']) && count($field['picklistValues']) === 0) {
+            $field['picklistValues'] = [
+                ['fullName' => 'A definir', 'default' => true],
+            ];
+        }
+
+        // MultiselectPicklist precisa de visibleLines
+        if ($type === 'MultiselectPicklist' && empty($field['visibleLines'])) {
+            $field['visibleLines'] = 4;
+        }
+
+        // Text sem length
+        if ($type === 'Text' && empty($field['length'])) {
+            $field['length'] = 255;
+        }
+
+        // LongTextArea sem length/visibleLines
+        if ($type === 'LongTextArea') {
+            if (empty($field['length'])) $field['length'] = 32768;
+            if (empty($field['visibleLines'])) $field['visibleLines'] = 4;
+        }
+
+        // Number/Currency/Percent sem precision
+        if (in_array($type, ['Number', 'Currency', 'Percent'])) {
+            if (empty($field['precision'])) $field['precision'] = 10;
+            if (!isset($field['scale'])) $field['scale'] = 2;
+        }
+
+        // Lookup sem relationshipLabel
+        if ($type === 'Lookup' && empty($field['relationshipLabel'])) {
+            $objName = $field['referenceTo'] ?? 'Related';
+            $field['relationshipLabel'] = $objName . 's';
+        }
+    }
+    unset($field);
+
+    return $manifest;
 }
 
 /**
