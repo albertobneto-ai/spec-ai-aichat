@@ -347,9 +347,21 @@ if (!empty($usarClaude) && defined('ANTHROPIC_KEY') && ANTHROPIC_KEY) {
         CURLOPT_TIMEOUT => 180,
     ]);
 
-    $resposta = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $resposta  = curl_exec($ch);
+    $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    $curlErrno = curl_errno($ch);
     curl_close($ch);
+
+    // Debug: se cURL falhou antes de chegar na API
+    if ($resposta === false) {
+        http_response_code(503);
+        echo json_encode([
+            'erro'       => "Falha de conexão com Anthropic: {$curlError}",
+            'curl_errno' => $curlErrno,
+        ]);
+        exit;
+    }
 
     $dados = json_decode($resposta, true);
 
@@ -362,7 +374,11 @@ if (!empty($usarClaude) && defined('ANTHROPIC_KEY') && ANTHROPIC_KEY) {
         ]);
     } else {
         http_response_code(503);
-        echo json_encode(['erro' => 'Claude Sonnet não respondeu. Tente novamente.']);
+        echo json_encode([
+            'erro'      => 'Claude Sonnet não respondeu.',
+            'http_code' => $httpCode,
+            'resposta'  => mb_substr($resposta ?: '', 0, 500),
+        ]);
     }
     exit;
 }
