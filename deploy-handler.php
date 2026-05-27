@@ -216,17 +216,34 @@ function processarDeploy(string $mensagem, array $historico): ?array {
         // Tenta parsear como JSON
         $jsonData = json_decode($conteudo, true);
         if ($jsonData && isset($jsonData['metadata'])) {
-            // É um manifest válido — faz deploy
+            // É um manifest válido — faz deploy direto
             $b64 = base64url_encode($conteudo);
             return chamarMCP('/api/deploy-b64/' . $b64, 'GET');
         }
 
-        // Não é JSON — instruir o usuário
+        // Não é JSON — trata como spec/HF e gera manifest via Grok
+        $manifest = gerarManifestViaIA($conteudo);
+        if ($manifest) {
+            $b64 = base64url_encode($manifest);
+            $resultado = chamarMCP('/api/deploy-b64/' . $b64, 'GET');
+            if (isset($resultado['choices'][0]['message']['content'])) {
+                $resultado['choices'][0]['message']['content'] =
+                    "🤖 Manifest gerado automaticamente pela IA a partir do conteúdo colado.\n\n"
+                    . $resultado['choices'][0]['message']['content']
+                    . "\n\n<details><summary>📋 Manifest JSON usado</summary>\n\n```json\n"
+                    . json_encode(json_decode($manifest, true), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+                    . "\n```\n</details>";
+            }
+            return $resultado;
+        }
+
         return respostaDeploy(
-            "O conteúdo não é um manifest JSON válido.\n\n" .
-            "Para deployar, o formato deve ser:\n```json\n{\n  \"specName\": \"Nome\",\n  \"metadata\": {\n    \"customFields\": [\n      {\n        \"object\": \"Lead\",\n        \"fullName\": \"Lead.Campo__c\",\n        \"label\": \"Campo\",\n        \"type\": \"Text\",\n        \"length\": 100\n      }\n    ]\n  }\n}\n```\n\n" .
-            "Gere o manifest no Claude (claude.ai) com o comando `/deploy` + a spec, e cole aqui o JSON resultante.",
-            'info'
+            "❌ Não consegui gerar o manifest a partir do conteúdo colado.\n\n" .
+            "Tente:\n" .
+            "- Colar uma spec técnica com campos e API Names definidos\n" .
+            "- Ou colar o manifest JSON diretamente: `/deploy {\"specName\":\"...\", \"metadata\":{...}}`\n\n" .
+            "_deploy-handler v2.0_",
+            'error'
         );
     }
 
