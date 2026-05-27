@@ -169,6 +169,7 @@ $conteudoAta  = $modoAta ? extrairConteudoAta($ultimaMensagem) : '';
 $apenasGrok   = false;
 $modeloForcar = null;
 $modeloForcarLabel = null;
+$modelosSpec  = []; // Modelos extras para /spec (Qwen3 + DeepSeek)
 
 // ── MONTA O SYSTEM PROMPT ──────────────────────────────────────────────
 
@@ -290,10 +291,13 @@ if ($modoAta) {
     // Se não limpar, o modelo vê HFs anteriores e copia o formato
     $messages = [['role' => 'user', 'content' => $msgFormatada]];
 
-    // Usa modelo dedicado para spec (Qwen3 235B — free, segue system prompts complexos)
-    $modeloForcar = 'qwen/qwen3-235b-a22b:free';
-    $modeloForcarLabel = 'Qwen3 235B';
-    $apenasGrok = false; // não usar Grok para spec — não segue o prompt
+    // Para /spec, inclui Qwen3 235B na corrida junto com Grok
+    $modelosSpec = [
+        'qwen/qwen3-235b-a22b:free' => 'Qwen3 235B',
+        'deepseek/deepseek-r1:free' => 'DeepSeek R1',
+    ];
+    $modeloForcar = null;
+    $apenasGrok = false;
 
 } else {
     // Modo normal — com data e anti-alucinação
@@ -330,10 +334,18 @@ $multiCurl = curl_multi_init();
 $handles   = [];
 $idx       = 0;
 
-// Se tem modelo forçado (ex: /spec usa Qwen3), chama APENAS ele
-if ($modeloForcar) {
+// Determina quais modelos OpenRouter usar
+// Para /spec: Qwen3 + DeepSeek R1 (mais capazes) + os normais
+// Para o resto: só os modelos configurados em config.php
+$orModelos = MODELOS_OPENROUTER;
+if (!empty($modelosSpec)) {
+    $orModelos = array_merge($modelosSpec, MODELOS_OPENROUTER);
+}
+
+// Handles para OpenRouter
+foreach ($orModelos as $modelo => $label) {
     $payload = json_encode([
-        'model'       => $modeloForcar,
+        'model'       => $modelo,
         'messages'    => $messagesComSystem,
         'max_tokens'  => $maxTokens,
         'temperature' => $temperature,
@@ -350,16 +362,17 @@ if ($modeloForcar) {
             'HTTP-Referer: ' . ($_SERVER['HTTP_HOST'] ?? 'localhost'),
             'X-Title: Spec AI',
         ],
-        CURLOPT_TIMEOUT => 120, // timeout maior para modelos grandes
+        CURLOPT_TIMEOUT => 120,
     ]);
 
     curl_multi_add_handle($multiCurl, $ch);
-    $handles[$idx] = ['curl' => $ch, 'modelo' => $modeloForcar, 'label' => $modeloForcarLabel];
+    $handles[$idx] = ['curl' => $ch, 'modelo' => $modelo, 'label' => $label];
     $idx++;
+}
 
-} else {
-    // Handles para OpenRouter (modo normal)
-    foreach (array_keys(MODELOS_OPENROUTER) as $modelo) {
+// Handles para xAI / Grok
+if (defined('GROK_KEY') && GROK_KEY && !str_contains(GROK_KEY, 'COLOQUE')) {
+    foreach (array_keys(MODELOS_GROK) as $modelo) {
         $payload = json_encode([
             'model'       => $modelo,
             'messages'    => $messagesComSystem,
@@ -367,53 +380,23 @@ if ($modeloForcar) {
             'temperature' => $temperature,
         ]);
 
-        $ch = curl_init('https://openrouter.ai/api/v1/chat/completions');
+        $ch = curl_init('https://api.x.ai/v1/chat/completions');
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => $payload,
             CURLOPT_HTTPHEADER     => [
                 'Content-Type: application/json',
-                'Authorization: Bearer ' . OPENROUTER_KEY,
-                'HTTP-Referer: ' . ($_SERVER['HTTP_HOST'] ?? 'localhost'),
-                'X-Title: AI Chat',
+                'Authorization: Bearer ' . GROK_KEY,
             ],
-            CURLOPT_TIMEOUT => 60,
+            CURLOPT_TIMEOUT => 120,
         ]);
 
         curl_multi_add_handle($multiCurl, $ch);
-        $handles[$idx] = ['curl' => $ch, 'modelo' => $modelo, 'label' => MODELOS_OPENROUTER[$modelo]];
+        $handles[$idx] = ['curl' => $ch, 'modelo' => $modelo, 'label' => MODELOS_GROK[$modelo]];
         $idx++;
     }
-
-    // Handles para xAI / Grok (se a chave estiver configurada)
-    if (defined('GROK_KEY') && GROK_KEY && !str_contains(GROK_KEY, 'COLOQUE')) {
-        foreach (array_keys(MODELOS_GROK) as $modelo) {
-            $payload = json_encode([
-                'model'       => $modelo,
-                'messages'    => $messagesComSystem,
-                'max_tokens'  => $maxTokens,
-                'temperature' => $temperature,
-            ]);
-
-            $ch = curl_init('https://api.x.ai/v1/chat/completions');
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_POST           => true,
-                CURLOPT_POSTFIELDS     => $payload,
-                CURLOPT_HTTPHEADER     => [
-                    'Content-Type: application/json',
-                    'Authorization: Bearer ' . GROK_KEY,
-                ],
-                CURLOPT_TIMEOUT => 60,
-            ]);
-
-            curl_multi_add_handle($multiCurl, $ch);
-            $handles[$idx] = ['curl' => $ch, 'modelo' => $modelo, 'label' => MODELOS_GROK[$modelo]];
-            $idx++;
-        }
-    }
-} // fim else (modo normal)
+}
 
 $running   = null;
 $resultado = null;
