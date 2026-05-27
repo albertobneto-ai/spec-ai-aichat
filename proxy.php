@@ -327,12 +327,16 @@ $messagesComSystem = array_merge(
 
 // ── MODO SPEC: Claude Sonnet (Anthropic API) ──────────────────────────
 if (!empty($usarClaude) && defined('ANTHROPIC_KEY') && ANTHROPIC_KEY) {
+    // Evita que o PHP mate o script antes do Claude responder
+    set_time_limit(300);
+    ignore_user_abort(true);
+
     $payload = json_encode([
         'model'      => 'claude-sonnet-4-6',
         'max_tokens' => $maxTokens,
         'system'     => $systemPrompt,
         'messages'   => $messages,
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
 
     $ch = curl_init('https://api.anthropic.com/v1/messages');
     curl_setopt_array($ch, [
@@ -344,40 +348,44 @@ if (!empty($usarClaude) && defined('ANTHROPIC_KEY') && ANTHROPIC_KEY) {
             'x-api-key: ' . ANTHROPIC_KEY,
             'anthropic-version: 2023-06-01',
         ],
-        CURLOPT_TIMEOUT => 180,
+        CURLOPT_TIMEOUT        => 240,
+        CURLOPT_CONNECTTIMEOUT => 15,
     ]);
 
     $resposta  = curl_exec($ch);
     $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlError = curl_error($ch);
-    $curlErrno = curl_errno($ch);
     curl_close($ch);
 
-    // Debug: se cURL falhou antes de chegar na API
+    // cURL falhou (SSL, DNS, timeout)
     if ($resposta === false) {
         http_response_code(503);
-        echo json_encode([
-            'erro'       => "Falha de conexão com Anthropic: {$curlError}",
-            'curl_errno' => $curlErrno,
-        ]);
+        echo json_encode(['erro' => "Falha de conexão com Claude: {$curlError}"]);
         exit;
     }
 
     $dados = json_decode($resposta, true);
 
     if ($httpCode === 200 && isset($dados['content'][0]['text'])) {
-        echo json_encode([
+        $saida = json_encode([
             'choices'      => [['message' => ['content' => $dados['content'][0]['text']]]],
             'modelo_usado' => 'claude-sonnet-4-6',
             'modelo_label' => 'Claude Sonnet 4',
             'tipo'         => 'spec',
-        ]);
+        ], JSON_UNESCAPED_UNICODE);
+
+        // Garante que o JSON é válido
+        if ($saida === false) {
+            echo json_encode(['erro' => 'Erro ao codificar resposta do Claude: ' . json_last_error_msg()]);
+        } else {
+            echo $saida;
+        }
     } else {
         http_response_code(503);
         echo json_encode([
-            'erro'      => 'Claude Sonnet não respondeu.',
+            'erro'      => 'Claude retornou erro.',
             'http_code' => $httpCode,
-            'resposta'  => mb_substr($resposta ?: '', 0, 500),
+            'detalhe'   => mb_substr($resposta ?: '', 0, 500),
         ]);
     }
     exit;
