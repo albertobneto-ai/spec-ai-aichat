@@ -291,9 +291,10 @@ if ($modoAta) {
     // Se não limpar, o modelo vê HFs anteriores e copia o formato
     $messages = [['role' => 'user', 'content' => $msgFormatada]];
 
-    // /spec usa APENAS Grok — modelos free não seguem o prompt
+    // /spec usa Claude Sonnet — maior precisão técnica em Salesforce
     $modelosSpec = [];
-    $apenasGrok = true;
+    $apenasGrok  = true;
+    $usarClaude  = true;
 
 } else {
     // Modo normal — com data e anti-alucinação
@@ -323,6 +324,48 @@ $messagesComSystem = array_merge(
     [['role' => 'system', 'content' => $systemPrompt]],
     $messages
 );
+
+// ── MODO SPEC: Claude Sonnet (Anthropic API) ──────────────────────────
+if (!empty($usarClaude) && defined('ANTHROPIC_KEY') && ANTHROPIC_KEY) {
+    $payload = json_encode([
+        'model'      => 'claude-sonnet-4-20250514',
+        'max_tokens' => $maxTokens,
+        'system'     => $systemPrompt,
+        'messages'   => $messages,
+    ]);
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'x-api-key: ' . ANTHROPIC_KEY,
+            'anthropic-version: 2023-06-01',
+        ],
+        CURLOPT_TIMEOUT => 180,
+    ]);
+
+    $resposta = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $dados = json_decode($resposta, true);
+
+    if ($httpCode === 200 && isset($dados['content'][0]['text'])) {
+        echo json_encode([
+            'choices'      => [['message' => ['content' => $dados['content'][0]['text']]]],
+            'modelo_usado' => 'claude-sonnet-4-20250514',
+            'modelo_label' => 'Claude Sonnet 4',
+            'tipo'         => 'spec',
+        ]);
+    } else {
+        http_response_code(503);
+        echo json_encode(['erro' => 'Claude Sonnet não respondeu. Tente novamente.']);
+    }
+    exit;
+}
 
 // ── CONSULTA TODOS OS MODELOS SIMULTANEAMENTE ──────────────────────────
 
