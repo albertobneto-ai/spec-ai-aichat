@@ -533,13 +533,20 @@ async function doSend(){
   showTyping();
 
   try {
+    // Timeout de 180s — Claude Sonnet pode levar até 2min para specs longas
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 180000);
+
     const resp = await fetch('<?= BASE_URL ?>/proxy.php', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: historico,
-      })
+      }),
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     const data = await resp.json();
 
@@ -568,7 +575,11 @@ async function doSend(){
     }
   } catch(err) {
     hideTyping();
-    mostrarErro('Falha de conexão. Tente novamente.');
+    if (err.name === 'AbortError') {
+      mostrarErro('Tempo limite excedido (3 min). O modelo pode estar sobrecarregado — tente novamente.');
+    } else {
+      mostrarErro('Falha de conexão: ' + err.message);
+    }
   }
 
   busy = false;
